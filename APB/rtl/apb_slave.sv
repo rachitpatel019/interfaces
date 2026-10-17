@@ -5,10 +5,10 @@ module apb_slave (
     input  logic                     PSEL,
     input  logic                     PENABLE,
 
-    output apb_fsm_pkg::apb_fsm_state state
+    output apb_pkg::apb_fsm_state_e state
 );
 
-import apb_fsm_pkg::*;
+import apb_pkg::*;
 
 // APB state decoding
 always_comb begin

@@ -6,7 +6,7 @@ module fifo_controller #(
     input logic PCLK,
     input logic PRESETn,
 
-    input apb_fsm_pkg::apb_fsm_state state,
+    input apb_pkg::apb_fsm_state_e state,
 
     input logic PWRITE,
     input logic [ADDR_WIDTH-1:0] PADDR,
@@ -17,7 +17,7 @@ module fifo_controller #(
     output logic PSLVERR
 );
 
-import apb_fsm_pkg::*;
+import apb_pkg::*;
 
 // FIFO signals
 logic fifo_enable;
@@ -49,8 +49,7 @@ always_comb begin
 
     if (state == ACCESS) begin
         case (PADDR)
-            // Data
-            'h00: begin
+            REG_DATA: begin
                 if (PWRITE) begin
                     fifo_write = 1'b1 && fifo_enable;
                     PREADY = 1'b1;
@@ -64,8 +63,7 @@ always_comb begin
                 end
             end
             
-            // Status
-            'h04: begin
+            REG_STATUS: begin
                 if (PWRITE) begin
                     PSLVERR = 1'b1;
                 end
@@ -81,8 +79,7 @@ always_comb begin
                 PREADY = 1'b1;
             end
 
-            // Control
-            'h08: begin
+            REG_CONTROL: begin
                 if (PWRITE) begin
                     fifo_flush = PWDATA[1];
                     fifo_clear_overflow = PWDATA[2];
@@ -95,8 +92,7 @@ always_comb begin
                 PREADY = 1'b1;
             end
 
-            // Count
-            'h0C: begin
+            REG_FIFO_COUNT: begin
                 if (PWRITE) begin
                     PSLVERR = 1'b1;
                 end
@@ -124,11 +120,11 @@ always_ff @(posedge PCLK) begin
         fifo_read_ready <= 1'b0;
     end
     else begin
-        if (state == ACCESS && PADDR == 'h08 && PWRITE) begin
+        if (state == ACCESS && PADDR == REG_CONTROL && PWRITE) begin
             fifo_enable <= PWDATA[0];
         end
 
-        if (state == ACCESS && PADDR == 'h00 && !PWRITE) begin
+        if (state == ACCESS && PADDR == REG_DATA && !PWRITE) begin
             if (PWRITE) begin
                 fifo_write_error <= (fifo_full || !fifo_enable);
             end
