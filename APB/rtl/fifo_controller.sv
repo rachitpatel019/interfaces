@@ -34,7 +34,6 @@ logic fifo_overflow;
 logic fifo_underflow;
 logic fifo_read_ready; // Used to align PREADY with 1-cycle FIFO read latency
 logic fifo_read_error; // Used to capture FIFO read error in cycle 1 of ACCESS
-logic fifo_write_error; // Used to capture FIFO write error in cycle 1 of ACCESS
 
 always_comb begin
     // Defaults
@@ -53,7 +52,7 @@ always_comb begin
                 if (PWRITE) begin
                     fifo_write = 1'b1 && fifo_enable;
                     PREADY = 1'b1;
-                    PSLVERR = fifo_write_error;
+                    PSLVERR = (!fifo_enable || fifo_full);
                 end
                 else begin
                     fifo_read = 1'b1 && fifo_enable && !fifo_read_ready;
@@ -116,8 +115,7 @@ always_ff @(posedge PCLK) begin
     if (!PRESETn) begin
         fifo_enable <= 1'b0;
         fifo_read_error <= 1'b0;
-        fifo_write_error <= 1'b0;
-        fifo_read_ready <= 1'b0;
+                fifo_read_ready <= 1'b0;
     end
     else begin
         if (state == ACCESS && PADDR == REG_CONTROL && PWRITE) begin
@@ -125,18 +123,12 @@ always_ff @(posedge PCLK) begin
         end
 
         if (state == ACCESS && PADDR == REG_DATA && !PWRITE) begin
-            if (PWRITE) begin
-                fifo_write_error <= (fifo_full || !fifo_enable);
-            end
-            else begin
-                fifo_read_error <= (fifo_empty || !fifo_enable);
-                fifo_read_ready <= !fifo_read_ready;
-            end
+            fifo_read_error <= (fifo_empty || !fifo_enable);
+            fifo_read_ready <= !fifo_read_ready;
         end
         else begin
             fifo_read_error <= 1'b0;
-            fifo_write_error <= 1'b0;
-            fifo_read_ready <= 1'b0;
+                        fifo_read_ready <= 1'b0;
         end
     end
 end

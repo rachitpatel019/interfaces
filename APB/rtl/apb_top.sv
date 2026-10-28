@@ -1,6 +1,7 @@
 module apb_top #(
     parameter int ADDR_WIDTH = 8,
     parameter int DATA_WIDTH = 32,
+    parameter int FIFO_DEPTH = 16
 ) (
     input logic PCLK,
     input logic PRESETn,
@@ -18,8 +19,6 @@ module apb_top #(
 );
 
 import apb_pkg::*;
-
-localparam int FIFO_DEPTH = 16;
 
 // Decoded APB state connecting apb_slave and fifo_controller
 apb_fsm_state_e state;

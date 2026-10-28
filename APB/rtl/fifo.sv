@@ -77,7 +77,7 @@ always_ff @(posedge PCLK) begin
         // Read pointer update and synchronous read
         if (read_valid) begin
             read_data <= memory[read_pointer];
-            if (read_pointer == FIFO_DEPTH - 1) begin
+            if (read_pointer >= FIFO_DEPTH - 1) begin
                 read_pointer <= 'b0;
             end
             else begin
@@ -92,7 +92,7 @@ always_ff @(posedge PCLK) begin
         if (write_valid) begin
             memory[write_pointer] <= write_data;
 
-            if (write_pointer == FIFO_DEPTH - 1) begin
+            if (write_pointer >= FIFO_DEPTH - 1) begin
                 write_pointer <= 'b0;
             end
             else begin
