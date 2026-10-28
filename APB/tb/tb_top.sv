@@ -67,7 +67,8 @@ module tb_top;
         .PWDATA(apb_bus.PWDATA),
         .PRDATA(apb_bus.PRDATA),
         .PREADY(apb_bus.PREADY),
-        .PSLVERR(apb_bus.PSLVERR)
+        .PSLVERR(apb_bus.PSLVERR),
+        .protocol_fault_active(apb_bus.protocol_fault_active)
     );
 
     // FIFO Micro-Architectural SVA Assertion Checker

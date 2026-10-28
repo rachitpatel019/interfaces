@@ -37,6 +37,17 @@ class apb_coverage extends uvm_subscriber #(apb_transaction);
 
     int total_coverage_samples;
 
+    // Software tracking for Higher-Dimensional Cross-Coverage
+    int sw_cx_op_state_en[string];
+    int sw_cx_op_addr_err[string];
+    int sw_cx_op_occ_err[string];
+    int sw_cx_op_addr_state_err[string];
+    int sw_cx_op_trans_occ[string];
+    local apb_transaction::apb_op_e last_op;
+    local bit last_op_valid;
+    local int last_occ_bin;
+    local bit last_occ_valid;
+
     // Sampled Variables for Covergroups
     apb_transaction::apb_op_e sample_op;
     bit [7:0] sample_addr;
@@ -163,6 +174,19 @@ class apb_coverage extends uvm_subscriber #(apb_transaction);
 
         // Error types across register addresses
         cx_err_addr: cross cp_error_type, cp_addr;
+
+        // --- Higher-Dimensional Cross-Coverage Bins ---
+        // 3-Way Cross: Operation x FIFO State x Enable Status
+        cx_op_state_enable: cross cp_op, cp_fifo_state, cp_fifo_enable;
+
+        // 3-Way Cross: Operation x Register Address x PSLVERR
+        cx_op_addr_pslverr: cross cp_op, cp_addr, cp_pslverr;
+
+        // 3-Way Cross: Operation x Occupancy Range x PSLVERR
+        cx_op_occupancy_pslverr: cross cp_op, cp_fifo_occupancy, cp_pslverr;
+
+        // 4-Way Hyper-Cross: Operation x Register Address x FIFO State x PSLVERR
+        cx_op_addr_state_pslverr: cross cp_op, cp_addr, cp_fifo_state, cp_pslverr;
     endgroup
 
     // Covergroup 2: Register Bitfield & Inspection Coverage
@@ -239,6 +263,10 @@ class apb_coverage extends uvm_subscriber #(apb_transaction);
 
         // Underflow flag assertion while empty
         cx_stat_uf_empty: cross cp_stat_uf, cp_stat_empty;
+
+        // Higher-Dimensional Register Cross: Control Actions x Error Status Flags
+        cx_ctrl_clr_stat_err: cross cp_ctrl_clr_of, cp_ctrl_clr_uf, cp_stat_of, cp_stat_uf;
+        cx_ctrl_flush_state: cross cp_ctrl_flush, cp_stat_empty, cp_stat_full;
     endgroup
 
     // Covergroup 3: Sequential Transfer and Occupancy Dynamics
@@ -265,6 +293,9 @@ class apb_coverage extends uvm_subscriber #(apb_transaction);
             bins hold_full = (16 => 16);
             bins hold_empty = (0 => 0);
         }
+
+        // Higher-Dimensional Sequential Cross: Operation Transition x Occupancy Dynamics
+        cx_op_trans_occupancy: cross cp_op_transition, cp_occupancy_transition;
     endgroup
 `endif
 
@@ -293,6 +324,68 @@ class apb_coverage extends uvm_subscriber #(apb_transaction);
         shadow_overflow = 1'b0;
         shadow_underflow = 1'b0;
         total_coverage_samples = 0;
+        last_op_valid = 1'b0;
+        last_occ_valid = 1'b0;
+        sw_cx_op_state_en.delete();
+        sw_cx_op_addr_err.delete();
+        sw_cx_op_occ_err.delete();
+        sw_cx_op_addr_state_err.delete();
+        sw_cx_op_trans_occ.delete();
+    endfunction
+
+    // Helper: Map count to discrete occupancy bin index (0..6)
+    virtual function int get_occ_bin_idx(int cnt);
+        if (cnt == 0) return 0;
+        if (cnt >= 1 && cnt <= 3) return 1;
+        if (cnt >= 4 && cnt <= 7) return 2;
+        if (cnt >= 8 && cnt <= 11) return 3;
+        if (cnt >= 12 && cnt <= 14) return 4;
+        if (cnt == 15) return 5;
+        return 6; // full (16)
+    endfunction
+
+    // Helper: Sample Software Higher-Dimensional Cross Coverage
+    virtual function void sample_sw_crosses(apb_transaction t, int pre_count, cov_fifo_state_e pre_state, bit pre_en);
+        string k1, k2, k3, k4, k5;
+        int occ_idx;
+        string addr_str;
+
+        case (t.addr)
+            REG_DATA: addr_str = "DATA";
+            REG_STATUS: addr_str = "STATUS";
+            REG_CONTROL: addr_str = "CTRL";
+            REG_FIFO_COUNT: addr_str = "COUNT";
+            default: addr_str = "UNMAPPED";
+        endcase
+
+        occ_idx = get_occ_bin_idx(pre_count);
+
+        // 1. 3-Way: Op x State x Enable (12 bins)
+        k1 = $sformatf("%s_%s_EN%0d", t.op.name(), pre_state.name(), pre_en);
+        sw_cx_op_state_en[k1]++;
+
+        // 2. 3-Way: Op x Addr x PSLVERR (20 bins)
+        k2 = $sformatf("%s_%s_ERR%0d", t.op.name(), addr_str, t.pslverr);
+        sw_cx_op_addr_err[k2]++;
+
+        // 3. 3-Way: Op x Occupancy x PSLVERR (28 bins)
+        k3 = $sformatf("%s_OCC%0d_ERR%0d", t.op.name(), occ_idx, t.pslverr);
+        sw_cx_op_occ_err[k3]++;
+
+        // 4. 4-Way Hyper-Cross: Op x Addr x State x PSLVERR (60 bins)
+        k4 = $sformatf("%s_%s_%s_ERR%0d", t.op.name(), addr_str, pre_state.name(), t.pslverr);
+        sw_cx_op_addr_state_err[k4]++;
+
+        // 5. Sequential Dynamics Cross: Op Transition x Occupancy Transition
+        if (last_op_valid && last_occ_valid) begin
+            k5 = $sformatf("%s2%s_OCC%0d2%0d", last_op.name(), t.op.name(), last_occ_bin, occ_idx);
+            sw_cx_op_trans_occ[k5]++;
+        end
+
+        last_op = t.op;
+        last_op_valid = 1'b1;
+        last_occ_bin = occ_idx;
+        last_occ_valid = 1'b1;
     endfunction
 
     // TLM Subscriber Write Method
@@ -332,6 +425,9 @@ class apb_coverage extends uvm_subscriber #(apb_transaction);
         apb_trans_cg.sample();
         apb_sequence_dynamics_cg.sample();
 `endif
+
+        // Sample Software Higher-Dimensional Crosses
+        sample_sw_crosses(t, pre_count, pre_state, pre_enable);
 
         // 3. Handle register-specific field coverage
         case (t.addr)
@@ -456,8 +552,19 @@ class apb_coverage extends uvm_subscriber #(apb_transaction);
         real reg_cov;
         real seq_cov;
         real overall_cov;
+        int c1_hits;
+        int c2_hits;
+        int c3_hits;
+        int c4_hits;
+        int c5_hits;
 
         super.report_phase(phase);
+
+        c1_hits = sw_cx_op_state_en.num();
+        c2_hits = sw_cx_op_addr_err.num();
+        c3_hits = sw_cx_op_occ_err.num();
+        c4_hits = sw_cx_op_addr_state_err.num();
+        c5_hits = sw_cx_op_trans_occ.num();
 `ifndef MODELSIM_ASE
         trans_cov = apb_trans_cg.get_inst_coverage();
         reg_cov = apb_register_fields_cg.get_inst_coverage();
@@ -468,9 +575,16 @@ class apb_coverage extends uvm_subscriber #(apb_transaction);
 `endif
 
         `uvm_info(get_type_name(), "==================================================", UVM_NONE)
-        `uvm_info(get_type_name(), " APB FIFO COVERAGE REPORT ", UVM_NONE)
+        `uvm_info(get_type_name(), "         APB FIFO COVERAGE REPORT ", UVM_NONE)
         `uvm_info(get_type_name(), "==================================================", UVM_NONE)
         `uvm_info(get_type_name(), $sformatf(" Total Monitored Samples : %0d", total_coverage_samples), UVM_NONE)
+        `uvm_info(get_type_name(), "--------------------------------------------------", UVM_NONE)
+        `uvm_info(get_type_name(), " [HIGHER-DIMENSIONAL CROSS-COVERAGE METRICS]", UVM_NONE)
+        `uvm_info(get_type_name(), $sformatf("  - 3-Way Op x State x Enable        : %0d / 12 bins  (%0.1f%%)", c1_hits, (c1_hits*100.0)/12.0), UVM_NONE)
+        `uvm_info(get_type_name(), $sformatf("  - 3-Way Op x Addr x PSLVERR        : %0d / 20 bins  (%0.1f%%)", c2_hits, (c2_hits*100.0)/20.0), UVM_NONE)
+        `uvm_info(get_type_name(), $sformatf("  - 3-Way Op x Occupancy x PSLVERR   : %0d / 28 bins  (%0.1f%%)", c3_hits, (c3_hits*100.0)/28.0), UVM_NONE)
+        `uvm_info(get_type_name(), $sformatf("  - 4-Way Op x Addr x State x PSLVERR: %0d / 60 bins  (%0.1f%%)", c4_hits, (c4_hits*100.0)/60.0), UVM_NONE)
+        `uvm_info(get_type_name(), $sformatf("  - Sequence Dynamics Cross          : %0d unique transitions", c5_hits), UVM_NONE)
         `uvm_info(get_type_name(), "--------------------------------------------------", UVM_NONE)
         `uvm_info(get_type_name(), $sformatf(" APB Transaction Coverage : %0.2f%%", trans_cov), UVM_NONE)
         `uvm_info(get_type_name(), $sformatf(" Register Fields Coverage : %0.2f%%", reg_cov), UVM_NONE)

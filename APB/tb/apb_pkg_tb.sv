@@ -50,6 +50,8 @@ package apb_pkg_tb;
     `include "sequences/fifo_random_seq.sv"
     `include "sequences/reset_during_traffic_seq.sv"
     `include "sequences/fifo_negative_seq.sv"
+    `include "sequences/apb_hostile_stress_seq.sv"
+    `include "sequences/apb_protocol_fault_seq.sv"
 
     // Test Suites
     `include "tests/apb_base_test.sv"
@@ -62,6 +64,8 @@ package apb_pkg_tb;
     `include "tests/apb_random_test.sv"
     `include "tests/reset_during_traffic_test.sv"
     `include "tests/fifo_negative_test.sv"
+    `include "tests/apb_hostile_stress_test.sv"
+    `include "tests/apb_protocol_fault_test.sv"
 
 endpackage : apb_pkg_tb
 

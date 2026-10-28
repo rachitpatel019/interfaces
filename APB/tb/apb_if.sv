@@ -17,16 +17,19 @@ interface apb_if #(
     logic PREADY;
     logic PSLVERR;
 
+    // Negative VIP / Hostile Protocol Fault Injection Indicator
+    logic protocol_fault_active;
+
     // Driver Clocking Block
     clocking drv_cb @(posedge PCLK);
         default input #1step output #0;
         input  PRDATA, PREADY, PSLVERR;
-        output PRESETn, PSEL, PENABLE, PWRITE, PADDR, PWDATA;
+        output PRESETn, PSEL, PENABLE, PWRITE, PADDR, PWDATA, protocol_fault_active;
     endclocking
 
     // Monitor Clocking Block
     clocking mon_cb @(posedge PCLK);
         default input #1step;
-        input  PRESETn, PSEL, PENABLE, PWRITE, PADDR, PWDATA, PRDATA, PREADY, PSLVERR;
+        input  PRESETn, PSEL, PENABLE, PWRITE, PADDR, PWDATA, PRDATA, PREADY, PSLVERR, protocol_fault_active;
     endclocking
 endinterface

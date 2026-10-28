@@ -13,6 +13,9 @@ class apb_monitor extends uvm_monitor;
     // Broadcast observed transactions to Scoreboard and Coverage
     uvm_analysis_port #(apb_transaction) ap;
 
+    // Track verified hostile protocol violations
+    int protocol_faults_observed;
+
     function new(string name = "apb_monitor", uvm_component parent = null);
         super.new(name, parent);
     endfunction
@@ -57,7 +60,12 @@ class apb_monitor extends uvm_monitor;
 
         // Protocol check: PENABLE must not be asserted without PSEL active
         if (vif.mon_cb.PENABLE === 1'b1 && vif.mon_cb.PSEL === 1'b0) begin
-            `uvm_error("MON_PROTO_ERR", "Protocol violation: PENABLE is asserted while PSEL is deasserted!")
+            if (vif.mon_cb.protocol_fault_active) begin
+                protocol_faults_observed++;
+                `uvm_info("MON_PROTO_FAULT_CAUGHT", "[NEGATIVE-VIP] Monitor verified intentional master protocol fault: PENABLE high with PSEL deasserted", UVM_MEDIUM)
+            end else begin
+                `uvm_error("MON_PROTO_ERR", "Protocol violation: PENABLE is asserted while PSEL is deasserted!")
+            end
         end
 
         // An APB transfer completes when PSEL, PENABLE, and PREADY are all asserted high

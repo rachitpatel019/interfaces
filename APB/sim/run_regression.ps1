@@ -79,7 +79,9 @@ $AllTests = @(
     "back_to_back_test",
     "apb_random_test",
     "reset_during_traffic_test",
-    "fifo_negative_test"
+    "fifo_negative_test",
+    "apb_hostile_stress_test",
+    "apb_protocol_fault_test"
 )
 
 $TestsToRun = if ($Test -eq "all") { $AllTests } else { @($Test) }

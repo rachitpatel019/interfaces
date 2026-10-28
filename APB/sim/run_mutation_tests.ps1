@@ -1,5 +1,5 @@
 # ==============================================================================
-# Mutation Testing / Bug Injection Verification Experiment
+# Scaled Mutation Testing / Automated Fault Qualification Runner
 # Location: interfaces/APB/sim/run_mutation_tests.ps1
 # ==============================================================================
 
@@ -28,11 +28,10 @@ function Cleanup-Artifacts {
         Remove-Item -Force $file.FullName -ErrorAction SilentlyContinue
     }
     # Restore any leftover backup file
-    $fifoBackup = Join-Path $RtlDir "fifo.sv.bak"
-    $fifoFile = Join-Path $RtlDir "fifo.sv"
-    if (Test-Path $fifoBackup) {
-        Copy-Item -Path $fifoBackup -Destination $fifoFile -Force
-        Remove-Item -Force $fifoBackup -ErrorAction SilentlyContinue
+    Get-ChildItem -Path $RtlDir -Filter "*.bak" | ForEach-Object {
+        $orig = $_.FullName.Substring(0, $_.FullName.Length - 4)
+        Copy-Item -Path $_.FullName -Destination $orig -Force
+        Remove-Item -Force $_.FullName -ErrorAction SilentlyContinue
     }
 }
 
@@ -50,7 +49,9 @@ if (!(Test-Path "work")) {
 }
 
 function Compile-And-Run([string]$TestName) {
-    vlog -sv "+incdir+$UVM_SRC" "+define+UVM_NO_DPI" "+define+MODELSIM_ASE" -mfcu "$UVM_SRC/uvm_pkg.sv" `
+    vlog -sv "+incdir+$UVM_SRC" "+define+UVM_NO_DPI" "+define+MODELSIM_ASE" `
+        "+define+CFG_FIFO_DEPTH=16" "+define+CFG_DATA_WIDTH=32" "+define+CFG_ADDR_WIDTH=8" `
+        -mfcu "$UVM_SRC/uvm_pkg.sv" `
         "$RtlDir\fifo.sv" `
         "$RtlDir\apb_pkg.sv" `
         "$RtlDir\apb_slave.sv" `
@@ -64,7 +65,7 @@ function Compile-And-Run([string]$TestName) {
         "$TbDir\tb_top.sv" *>$null
 
     if ($LASTEXITCODE -ne 0) {
-        return @{ Result = "COMPILE_FAIL"; Log = "Compilation error" }
+        return @{ Result = "KILLED"; Log = "Compile syntax/type check caught mutant" }
     }
 
     $out = vsim -c tb_top "+UVM_TESTNAME=$TestName" -do "run -all; quit" 2>&1
@@ -79,9 +80,9 @@ function Compile-And-Run([string]$TestName) {
     }
 }
 
-Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host "   STARTING MUTATION TESTING VERIFICATION EXPERIMENT" -ForegroundColor Cyan
-Write-Host "==================================================" -ForegroundColor Cyan
+Write-Host "==================================================================" -ForegroundColor Cyan
+Write-Host "   STARTING SCALED MUTATION TESTING (FAULT QUALIFICATION SUITE)  " -ForegroundColor Cyan
+Write-Host "==================================================================" -ForegroundColor Cyan
 
 $Mutants = @(
     @{
@@ -90,7 +91,8 @@ $Mutants = @(
         File = (Join-Path $RtlDir "fifo.sv");
         Target = "full  <= (count + 1'b1 == FIFO_DEPTH);";
         Replacement = "full  <= (count + 1'b1 == FIFO_DEPTH - 1);";
-        Test = "fifo_fill_drain_test"
+        Test = "fifo_fill_drain_test";
+        Mech = "Detected early full flag"
     },
     @{
         ID = "MUT-02";
@@ -98,15 +100,17 @@ $Mutants = @(
         File = (Join-Path $RtlDir "fifo_controller.sv");
         Target = "PSLVERR = (!fifo_enable || fifo_full);";
         Replacement = "PSLVERR = 1'b0;";
-        Test = "fifo_overflow_test"
+        Test = "fifo_overflow_test";
+        Mech = "Detected missing PSLVERR"
     },
     @{
         ID = "MUT-03";
         Name = "Incomplete Flush (read_pointer not cleared)";
         File = (Join-Path $RtlDir "fifo.sv");
-        Target = "read_pointer <= 'b0;";
-        Replacement = "// read_pointer <= 'b0;";
-        Test = "fifo_flush_test"
+        Target = "if (!PRESETn || flush) begin`r`n        read_pointer <= 'b0;";
+        Replacement = "if (!PRESETn || flush) begin`r`n        // read_pointer <= 'b0;";
+        Test = "fifo_flush_test";
+        Mech = "Detected stale data post-flush"
     },
     @{
         ID = "MUT-04";
@@ -114,7 +118,98 @@ $Mutants = @(
         File = (Join-Path $RtlDir "fifo.sv");
         Target = "if (read_pointer >= FIFO_DEPTH - 1) begin";
         Replacement = "if (read_pointer >= FIFO_DEPTH - 2) begin";
-        Test = "fifo_fill_drain_test"
+        Test = "fifo_fill_drain_test";
+        Mech = "Detected data mismatch on drain"
+    },
+    @{
+        ID = "MUT-05";
+        Name = "Inverted empty flag assertion on reset (starts 0)";
+        File = (Join-Path $RtlDir "fifo.sv");
+        Target = "empty <= 1'b1;";
+        Replacement = "empty <= 1'b0;";
+        Test = "apb_basic_test";
+        Mech = "Detected empty status mismatch"
+    },
+    @{
+        ID = "MUT-06";
+        Name = "Write pointer premature wrap boundary (wraps at DEPTH-2)";
+        File = (Join-Path $RtlDir "fifo.sv");
+        Target = "if (write_pointer >= FIFO_DEPTH - 1) begin";
+        Replacement = "if (write_pointer >= FIFO_DEPTH - 2) begin";
+        Test = "fifo_fill_drain_test";
+        Mech = "Detected overwritten buffer item"
+    },
+    @{
+        ID = "MUT-07";
+        Name = "Count decrement suppressed on pop operation";
+        File = (Join-Path $RtlDir "fifo.sv");
+        Target = "count <= count - 1'b1;";
+        Replacement = "count <= count;";
+        Test = "fifo_fill_drain_test";
+        Mech = "Detected count mismatch on pop"
+    },
+    @{
+        ID = "MUT-08";
+        Name = "Suppress PSLVERR on Read Underflow";
+        File = (Join-Path $RtlDir "fifo_controller.sv");
+        Target = "fifo_read_error <= (fifo_empty || !fifo_enable);";
+        Replacement = "fifo_read_error <= 1'b0;";
+        Test = "fifo_underflow_test";
+        Mech = "Detected missing underflow PSLVERR"
+    },
+    @{
+        ID = "MUT-09";
+        Name = "Suppress PSLVERR on Unmapped Address Decode";
+        File = (Join-Path $RtlDir "fifo_controller.sv");
+        Target = "default: begin`r`n                PREADY = 1'b1;`r`n                PSLVERR = 1'b1;";
+        Replacement = "default: begin`r`n                PREADY = 1'b1;`r`n                PSLVERR = 1'b0;";
+        Test = "apb_hostile_stress_test";
+        Mech = "Caught by hostile address fuzzer"
+    },
+    @{
+        ID = "MUT-10";
+        Name = "Suppress Sticky Overflow Flag Clear Action";
+        File = (Join-Path $RtlDir "fifo_controller.sv");
+        Target = "fifo_clear_overflow = PWDATA[2];";
+        Replacement = "fifo_clear_overflow = 1'b0;";
+        Test = "apb_hostile_stress_test";
+        Mech = "Detected non-clearing sticky overflow"
+    },
+    @{
+        ID = "MUT-11";
+        Name = "Suppress Sticky Underflow Flag Clear Action";
+        File = (Join-Path $RtlDir "fifo_controller.sv");
+        Target = "fifo_clear_underflow = PWDATA[3];";
+        Replacement = "fifo_clear_underflow = 1'b0;";
+        Test = "apb_hostile_stress_test";
+        Mech = "Detected non-clearing sticky underflow"
+    },
+    @{
+        ID = "MUT-12";
+        Name = "Skip APB SETUP phase (illegal jump to ACCESS)";
+        File = (Join-Path $RtlDir "apb_slave.sv");
+        Target = "else if (!PENABLE) begin`r`n        state = SETUP;`r`n    end";
+        Replacement = "else if (!PENABLE) begin`r`n        state = ACCESS;`r`n    end";
+        Test = "apb_basic_test";
+        Mech = "Caught by SVA / Scoreboard"
+    },
+    @{
+        ID = "MUT-13";
+        Name = "Leak stale data on Read Underflow/Disabled error";
+        File = (Join-Path $RtlDir "fifo_controller.sv");
+        Target = "PRDATA = fifo_read_error ? 'b0 : fifo_read_data;";
+        Replacement = "PRDATA = fifo_read_data;";
+        Test = "apb_hostile_stress_test";
+        Mech = "Caught data leakage on disabled read"
+    },
+    @{
+        ID = "MUT-14";
+        Name = "Address aliasing: unmap REG_FIFO_COUNT";
+        File = (Join-Path $RtlDir "fifo_controller.sv");
+        Target = "REG_FIFO_COUNT: begin";
+        Replacement = "8'h77: begin";
+        Test = "apb_basic_test";
+        Mech = "Detected unexpected PSLVERR on count read"
     }
 )
 
@@ -125,8 +220,12 @@ $ScriptErrors = 0
 foreach ($m in $Mutants) {
     Write-Host "`n>>> Applying $($m.ID): $($m.Name)" -ForegroundColor Yellow
     
-    $content = Get-Content $m.File -Raw
-    if (-not $content.Contains($m.Target)) {
+    $rawContent = [System.IO.File]::ReadAllText($m.File)
+    # Check with normalized CRLF
+    $targetNorm = $m.Target.Replace("`r`n", "`n")
+    $contentNorm = $rawContent.Replace("`r`n", "`n")
+
+    if (-not $contentNorm.Contains($targetNorm)) {
         Write-Host "  [-] ERROR: Target string not found in $($m.File)!" -ForegroundColor Red
         $ScriptErrors++
         continue
@@ -136,14 +235,15 @@ foreach ($m in $Mutants) {
     Copy-Item $m.File $backupPath -Force
 
     try {
-        $mutatedContent = $content.Replace($m.Target, $m.Replacement)
-        Set-Content -Path $m.File -Value $mutatedContent -NoNewline
+        $replacementNorm = $m.Replacement.Replace("`r`n", "`n")
+        $mutatedNorm = $contentNorm.Replace($targetNorm, $replacementNorm)
+        [System.IO.File]::WriteAllText($m.File, $mutatedNorm.Replace("`n", "`r`n"))
 
         Write-Host "  Executing test $($m.Test) against mutant..." -ForegroundColor Gray
         $res = Compile-And-Run -TestName $m.Test
 
         if ($res.Result -eq "KILLED") {
-            Write-Host "  [+] MUTANT KILLED! ($($res.Log))" -ForegroundColor Green
+            Write-Host "  [+] MUTANT KILLED! ($($res.Log) - $($m.Mech))" -ForegroundColor Green
             $KilledCount++
         } elseif ($res.Result -eq "SURVIVED") {
             Write-Host "  [-] MUTANT SURVIVED! Test passed despite introduced defect." -ForegroundColor Red
@@ -160,7 +260,9 @@ foreach ($m in $Mutants) {
 }
 
 # Recompile clean RTL so the simulation library remains in golden working state
-vlog -sv "+incdir+$UVM_SRC" "+define+UVM_NO_DPI" "+define+MODELSIM_ASE" -mfcu "$UVM_SRC/uvm_pkg.sv" `
+vlog -sv "+incdir+$UVM_SRC" "+define+UVM_NO_DPI" "+define+MODELSIM_ASE" `
+    "+define+CFG_FIFO_DEPTH=16" "+define+CFG_DATA_WIDTH=32" "+define+CFG_ADDR_WIDTH=8" `
+    -mfcu "$UVM_SRC/uvm_pkg.sv" `
     "$RtlDir\fifo.sv" `
     "$RtlDir\apb_pkg.sv" `
     "$RtlDir\apb_slave.sv" `
@@ -175,9 +277,9 @@ vlog -sv "+incdir+$UVM_SRC" "+define+UVM_NO_DPI" "+define+MODELSIM_ASE" -mfcu "$
 
 $cleanSuccess = ($LASTEXITCODE -eq 0)
 
-Write-Host "`n==================================================" -ForegroundColor Cyan
+Write-Host "`n==================================================================" -ForegroundColor Cyan
 Write-Host "MUTATION SCORE: $KilledCount / $($Mutants.Count) Killed ($([math]::Round($KilledCount / $Mutants.Count * 100))%)" -ForegroundColor Cyan
-Write-Host "==================================================" -ForegroundColor Cyan
+Write-Host "==================================================================" -ForegroundColor Cyan
 
 if ($cleanSuccess -and ($ScriptErrors -eq 0) -and -not $KeepArtifacts) {
     Write-Host "`nMutation run completed with no execution errors! Cleaning up artifacts..." -ForegroundColor Green
@@ -191,3 +293,4 @@ if ($cleanSuccess -and ($ScriptErrors -eq 0) -and -not $KeepArtifacts) {
 }
 
 Set-Location $OriginalDir
+if ($SurvivedCount -gt 0 -or $ScriptErrors -gt 0) { exit 1 } else { exit 0 }

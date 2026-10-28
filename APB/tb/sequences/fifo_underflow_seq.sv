@@ -17,11 +17,15 @@ class fifo_underflow_seq extends apb_base_seq;
         // 1. Enable FIFO
         enable_fifo();
 
+        // 1a. Write and pop a non-zero word so FIFO memory/read registers contain non-zero stale data
+        write_reg(REG_DATA, 32'hA5A5_5A5A);
+        read_reg(REG_DATA, rdata, pslverr); // FIFO is now EMPTY, but internal read latch holds 0xA5A55A5A
+
         // 2. Verify FIFO is EMPTY
         read_reg(REG_STATUS, rdata, pslverr);
 
-        // 3. Attempt read on EMPTY FIFO (Underflow condition, expects PSLVERR and 0x0 rdata)
-        `uvm_info(get_type_name(), "Injecting underflow read attempt on EMPTY FIFO...", UVM_MEDIUM)
+        // 3. Attempt read on EMPTY FIFO (Underflow condition, MUST return 0x0 rdata, not stale data)
+        `uvm_info(get_type_name(), "Injecting underflow read attempt on EMPTY FIFO (verifying zero-data return)...", UVM_MEDIUM)
         read_reg(REG_DATA, rdata, pslverr, apb_transaction::ERR_UNDERFLOW);
 
         // 4. Verify UNDERFLOW flag (bit 3) is asserted in STATUS

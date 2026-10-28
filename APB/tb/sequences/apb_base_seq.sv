@@ -92,6 +92,24 @@ class apb_base_seq extends uvm_sequence #(apb_transaction);
         write_reg(REG_CONTROL, 32'h0000_0009);
     endtask
 
+    // Helper task for negative VIP protocol fault injection
+    virtual task inject_fault(
+        input apb_transaction::apb_protocol_fault_e fault,
+        input bit [ADDR_WIDTH-1:0]                  addr = REG_DATA,
+        input bit [DATA_WIDTH-1:0]                  wdata = 32'hDEAD_BEEF,
+        input apb_transaction::apb_op_e            op = apb_transaction::APB_WRITE
+    );
+        apb_transaction tr;
+        tr = apb_transaction::type_id::create("tr");
+        start_item(tr);
+        tr.op             = op;
+        tr.addr           = addr;
+        tr.wdata          = wdata;
+        tr.protocol_fault = fault;
+        tr.error_type     = apb_transaction::NO_ERR;
+        finish_item(tr);
+    endtask
+
 endclass
 
 `endif

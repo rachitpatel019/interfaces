@@ -17,14 +17,15 @@ module apb_sva #(
     input logic [DATA_WIDTH-1:0]  PWDATA,
     input logic [DATA_WIDTH-1:0]  PRDATA,
     input logic                   PREADY,
-    input logic                   PSLVERR
+    input logic                   PSLVERR,
+    input logic                   protocol_fault_active
 );
 
     // -------------------------------------------------------------------------
     // Property 1: PENABLE must never be asserted without PSEL active
     // -------------------------------------------------------------------------
     property p_enable_requires_psel;
-        @(posedge PCLK) disable iff (!PRESETn)
+        @(posedge PCLK) disable iff (!PRESETn || protocol_fault_active)
         PENABLE |-> PSEL;
     endproperty
     assert_enable_requires_psel: assert property (p_enable_requires_psel)
@@ -34,7 +35,7 @@ module apb_sva #(
     // Property 2: ACCESS phase (PSEL && PENABLE) must be preceded by SETUP phase (PSEL && !PENABLE)
     // -------------------------------------------------------------------------
     property p_setup_before_access;
-        @(posedge PCLK) disable iff (!PRESETn)
+        @(posedge PCLK) disable iff (!PRESETn || protocol_fault_active)
         ($rose(PENABLE) && PSEL) |-> $past(PSEL && !PENABLE);
     endproperty
     assert_setup_before_access: assert property (p_setup_before_access)
@@ -44,7 +45,7 @@ module apb_sva #(
     // Property 3: Address, write command, and write data must remain stable during wait states
     // -------------------------------------------------------------------------
     property p_stability_during_wait;
-        @(posedge PCLK) disable iff (!PRESETn)
+        @(posedge PCLK) disable iff (!PRESETn || protocol_fault_active)
         (PSEL && PENABLE && !PREADY) |=> ($stable(PADDR) && $stable(PWRITE) && $stable(PSEL) && (PWRITE ? $stable(PWDATA) : 1'b1));
     endproperty
     assert_stability_during_wait: assert property (p_stability_during_wait)
@@ -54,7 +55,7 @@ module apb_sva #(
     // Property 4: PENABLE must drop after transfer completion unless back-to-back transfer initiates next access
     // -------------------------------------------------------------------------
     property p_penable_falls_after_transfer;
-        @(posedge PCLK) disable iff (!PRESETn)
+        @(posedge PCLK) disable iff (!PRESETn || protocol_fault_active)
         (PSEL && PENABLE && PREADY) |=> (!PENABLE || !PSEL);
     endproperty
     assert_penable_falls_after_transfer: assert property (p_penable_falls_after_transfer)
