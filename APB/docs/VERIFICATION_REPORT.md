@@ -1,7 +1,7 @@
 # APB-Controlled Synchronous FIFO: Integration Readiness & Verification Sign-Off Report
 
 **Target IP Module**: `apb_top` (AMBA APB 3.0 Completer Interface + Synchronous FIFO Buffer)  
-**Verification Framework**: UVM 1.2 (SystemVerilog) + Verilator 5.032 (C++ Cycle-Accurate Co-Simulation)  
+**Verification Framework**: UVM 2020 / IEEE 1800.2-2020 (SystemVerilog) + Verilator 5.032 (C++ Cycle-Accurate Co-Simulation)  
 **Target Simulator Environments**: QuestaSim / ModelSim ASE 2020.1 & Verilator 5.032 (WSL2 Ubuntu / Linux / Windows)  
 **Verification Sign-Off Status**: **QUALIFIED — 100% PASS (INTEGRATION READY)**  
 
@@ -117,7 +117,7 @@ flowchart TD
 ```
 
 ### 4.1 UVM Testbench Environment
-The verification environment is fully compliant with UVM 1.2:
+The verification environment is fully compliant with UVM 2020 (IEEE 1800.2-2020):
 
 ```mermaid
 flowchart TD

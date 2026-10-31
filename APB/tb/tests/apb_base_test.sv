@@ -32,11 +32,15 @@ class apb_base_test extends uvm_test;
     endfunction
 
     virtual function void end_of_elaboration_phase(uvm_phase phase);
+        uvm_coreservice_t cs;
+        uvm_root top;
         super.end_of_elaboration_phase(phase);
+        cs  = uvm_coreservice_t::get();
+        top = cs.get_root();
         // Print topology
-        uvm_top.print_topology();
+        top.print_topology();
         // Set simulation timeout
-        uvm_top.set_timeout(1000ms, 0);
+        top.set_timeout(1000ms, 0);
     endfunction
 
     virtual task run_phase(uvm_phase phase);
@@ -45,9 +49,11 @@ class apb_base_test extends uvm_test;
     endtask
 
     virtual function void report_phase(uvm_phase phase);
+        uvm_coreservice_t cs;
         uvm_report_server svr;
         super.report_phase(phase);
-        svr = uvm_report_server::get_server();
+        cs  = uvm_coreservice_t::get();
+        svr = cs.get_report_server();
 
         `uvm_info(get_type_name(), "--------------------------------------------------", UVM_NONE)
         if (svr.get_severity_count(UVM_FATAL) + svr.get_severity_count(UVM_ERROR) == 0) begin

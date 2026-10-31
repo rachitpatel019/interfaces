@@ -103,4 +103,42 @@ class apb_transaction extends uvm_sequence_item;
     function bit expect_pslverr();
         return (error_type != NO_ERR);
     endfunction
+
+    virtual function void do_copy(uvm_object rhs);
+        apb_transaction rhs_;
+        if (!$cast(rhs_, rhs)) begin
+            `uvm_fatal("DO_COPY", "Type mismatch in apb_transaction::do_copy")
+        end
+        super.do_copy(rhs);
+        this.error_type     = rhs_.error_type;
+        this.protocol_fault = rhs_.protocol_fault;
+        this.op             = rhs_.op;
+        this.addr           = rhs_.addr;
+        this.wdata          = rhs_.wdata;
+        this.rdata          = rhs_.rdata;
+        this.pslverr        = rhs_.pslverr;
+    endfunction
+
+    virtual function bit do_compare(uvm_object rhs, uvm_comparer comparer);
+        apb_transaction rhs_;
+        if (!$cast(rhs_, rhs)) return 1'b0;
+        return (super.do_compare(rhs, comparer) &&
+                (this.error_type     == rhs_.error_type) &&
+                (this.protocol_fault == rhs_.protocol_fault) &&
+                (this.op             == rhs_.op) &&
+                (this.addr           == rhs_.addr) &&
+                (this.wdata          == rhs_.wdata) &&
+                (this.rdata          == rhs_.rdata) &&
+                (this.pslverr        == rhs_.pslverr));
+    endfunction
+
+    virtual function string convert2string();
+        return $sformatf("op=%s addr=0x%0h wdata=0x%0h rdata=0x%0h pslverr=%0b err_type=%s protocol_fault=%s",
+                         op.name(), addr, wdata, rdata, pslverr, error_type.name(), protocol_fault.name());
+    endfunction
+
+    virtual function void do_print(uvm_printer printer);
+        super.do_print(printer);
+        printer.print_string("transaction_summary", convert2string());
+    endfunction
 endclass

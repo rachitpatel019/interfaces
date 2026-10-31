@@ -1,10 +1,11 @@
 # ==============================================================================
 # APB FIFO UVM Verification Makefile
 # Location: interfaces/APB/sim/Makefile
-# Supports QuestaSim / ModelSim / VCS / Xcelium
+# Supports QuestaSim / ModelSim / VCS / Xcelium (UVM 2020 / IEEE 1800.2-2020)
 # ==============================================================================
 
-UVM_HOME ?= /tools/mentor/questasim/verilog_src/uvm-1.2
+UVM_VER  ?= 2020
+UVM_HOME ?= /tools/mentor/questasim/verilog_src/uvm-$(UVM_VER)
 WORK     ?= work
 TEST     ?= apb_basic_test
 GUI      ?= 0
